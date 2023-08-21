@@ -1,0 +1,184 @@
+# test/scratch parameter file
+
+basic:
+  # name:                 # Name override. If "None", "none" or blank, or if not present, will use params filename.
+  # dataset: nyu          # Switch between different datasets. "nyu" or "kitti".
+  dataset: kitti
+  batch_size: 16         # Batch size. 
+  max_epochs: 25        # Number of epochs to do
+  validate_every: 1     # Run val every N epochs
+  # from_checkpoint: ./runs/nyu_efficientnet-b1_1/version_0/checkpoints/epoch=0-step=3029.ckpt
+  # from_checkpoint: ./TEST_CHKPT.pt
+  # val_checkpoint: ./TEST_CHKPT.pt   # Checkpoint to evaluate. If this isn't present, will use most recent checkpoint of the run with the same name as the parameter file, or args.name if defined.
+  use_adabins_dataloader: True  # If set, will use the original adabins dataloader (and its onboard data augmentation).
+
+optimizer:
+  name: adamw
+  lr: 0.000357      # Learning rate to use
+  wd: 0.1           # Weight decay to use
+  # use_swa: True     # If true, discards the OneCycle LR scheduler and uses stochastic weight averaging instead.
+
+  # 1-Cycle LR Scheduler params
+  div_factor: 25    
+  final_div_factor: 100
+  # Gradient norm clipping factor - leave out or set to 0 to disable.
+  gradient_clip_val: 0.1
+
+model:
+  # name: adabins         # Name of model to use. Model-specific settings should be in args[args.model.name].
+  name: depthclip
+
+loss: # Information about different loss functions
+  # names: ['silog', 'bins_chamfer']      # List of different loss functions to use.
+  # coeffs: [1, 0.1]           # List of multipliers for the loss functions. Order follows loss_names.
+  names: ['silog']
+  coeffs: [1]
+  # filenames_file_eval: ./datasets/split_filenames_files/kitti_eigen_test_files_with_gt.txt
+
+
+depthclip:
+  # CLIP backbone to use. View options using clip.available_models().
+  # Currently, options are ['RN50', 'RN101', 'RN50x4', 'RN50x16', 'RN50x64', 'ViT-B/32', 'ViT-B/16', 'ViT-L/14', 'ViT-L/14@336px']
+  # clip: ViT-B/32
+  clip: RN50
+
+  # Checkpoint loading. If set, will load a depthclip checkpoint. DepthCLIP settings used for checkpoint must match
+  # those set in this run (except for imgf-things: imgf tokens take precedence).
+  # start_from_checkpoint: ./runs/depthclip_nyu_rn50_pv1_ls7_p_dset-even-7/version_1/checkpoints/last.ckpt
+  # load_clip_from_checkpoint: False   # Whether to try to load any of the CLIP weights.
+
+  # Whether to fully freeze the depthclip model. This prevents any tokens being learned.
+  # freeze_clip: False
+  # freeze_clip: True
+
+  # Language strategy to use (what language is used to create language embeddings for depthclip)
+  # Human means a human chose the specific tokens used to relate to depth
+  # Static means that the embeddings/words used don't change based on input image
+  lang_strat:
+    ## template variant to use.
+    # templates: paper          # "This {obj} is {depth_token}"
+    # templates: paper-v1       # "This {obj} appears to be {depth_token}"
+    # templates: learned-static-1o1d  # numbers are numbers of learnable prompt tokens, o and d are object and depth tokens respectively.
+    # templates: learned-static-1o2d  # numbers are numbers of learnable prompt tokens, o and d are object and depth tokens respectively.
+    templates: learned-static-4o4d  # numbers are numbers of learnable prompt tokens, o and d are object and depth tokens respectively.
+
+    ## Depth token set to use
+    # depth_tokens: paper       # As in DepthCLIP (a mix of size- and depth-based tokens)
+    # depth_tokens: size-7      # A 7-point scale of size-related words (e.g. "very small" to "very big")
+    # depth_tokens: depth-7      # A 7-point scale of depth-related words (e.g. "very close " to "very distant")
+    # depth_tokens: learned-static-7  # 7-point depth scale, but each token is learnable. 
+    # depth_tokens: learned-static-20  # 20-point depth scale but with learnable tokens.
+    # depth_tokens: learned-static-128  # 128-point depth scale but with learnable tokens.
+    depth_tokens: learned-static-256    # 256-point depth scale but with learnable tokens.
+
+    ## Object token set to use.
+    object_tokens: paper      # In the DepthCLIP paper, this is just "object".
+    # object_tokens: learned-static-1 # A single learned object token
+    # object_tokens: imgf    # Uses a transformation of img_f as object token.
+    # object_tokens: imgf_agg    # Not implemented yet. Uses an aggregated transformation of img_f as object token (same for each patch)
+
+    ## ONLY for use with imgf- tokens types. Transformation to apply to each patch's img_f features before feeding to imgf templating.
+    # imgf_transformation: interpolate    # Interpolate the img_f features in the channel dimension to match the 512 token size required by CLIP.
+    # imgf_transformation: apln_interpolate  # Does average pooling then layer norm, then interpolates down to 512 channels. 
+
+    # depth_bin_centres: paper  # Name of set of depth bin centres to use.
+    # depth_bin_centres: dset-even-7  # 7 evenly-spaced bins in the dataset's total range.
+    # depth_bin_centres: dset-even-20  # 20 evenly-spaced bins in the dataset's total range.
+    # depth_bin_centres: dset-even-128  # 128 evenly-spaced bins in the dataset's total range.
+    # depth_bin_centres: dset-even-256  # 256 evenly-spaced bins in the dataset's total range.
+    # depth_bin_centres: dset-log-256    # 256 bins spaced uniformly in log-space (log-uniform) within the dataset's range
+    depth_bin_centres: const80-log-256  # 256 bins spaced uniformly in log space within the fixed range 0.001 to 80m.
+
+  # Output options
+  # Arch modifies three parts:
+  #   1. Img features, before text correlation
+  #   2. Bin probabilities (after text correlation)
+  #   3. Depth map output
+  post_img_feat_stage: depthclip      # Default. Keeps the low-res image features (directly output by the encoder)
+  # post_img_feat_stage: interpolate_bilinear_half  # Bilinear upsample img_f to 0.5 * input image dimensions.
+  # post_img_feat_stage: interpolate_bilinear_full  # Bilinear upsample img_f to input image dimensions.
+  # post_img_feat_stage: BasicDecoder-4f  # Decoder of the 1024-dim img_f.
+
+  # The img + txt correlation/relation behaviour to use (between txt_f and img_f)
+  # called the lang_corr stage because it relates text and image features, somehow.
+  # Default method gets text features for many prompts, then finds logits for them.
+  # Other possible methods might instead directly decode the text features.
+  lang_corr_stage: depthclip   # Default. Does matrix multiply between img_f (BxHWxK) and txt_f (KxN where N is number of prompts.)
+  # lang_corr_stage: per-imgf-depthclip   # Assumes txt_f is extracted per-imgf (i.e. input-dependent), dims BxHWxKxN. K and N are txt_f dims and number of prompts respectively. 
+  # lang_corr_stage: direct-out  # NOT IMPLEMENTED YET: txt_f is BxHWxK only, and needs direct decoding to a depth map somehow (no binning done).
+
+  post_lang_corr_stage: depthclip     # Default. Weighted sum of bin probabilities after correlation
+  # post_lang_corr_stage: upsample-2x     # Bilinearly upsample the logits by factor of 2
+  # post_lang_corr_stage: upsample-4x     # Bilinearly upsample the logits by factor of 4
+  # post_lang_corr_stage: BasicDecoder-4f     # 4x nearest neighbour upsample + 3x3 conv with no channel reduction.
+  # post_lang_corr_stage: BasicDecoder-5f     # 5x nearest neighbour upsample + 3x3 conv with no channel reduction.
+  
+  post_depth_pred_stage: depthclip    # Default. Do nothing to the output (training model will bilinearly upsample for output stage)
+  # post_depth_pred_stage: BasicDecoder-4f   # 4x nearest neighbour upsample + 3x3 conv with no channel reduction.
+
+
+adabins:
+  n_bins: 256
+  slow_encoder: 10  # If not none, encoder learning rate will be optimizer.lr / optimizer.slow_encoder.
+  # do_final_upscale: True # If True, will add a final upscale layer to the dense feature extractor to get feature resolution to match input resolution.
+  encoder_name: efficientnet-b1
+  # encoder_name: efficientnet-b5
+  # encoder_name: efficientnet-v2-s
+  # encoder_name: efficientnet-v2-m
+
+
+paths:  # Dataset-agnostic path information
+  data_dir: ./data      # Path to folder containing the nyu folder
+  run_dir: ./runs       # Path to tensorboard run dir.
+
+nyu:  # Even if NYU isn't being used, this has information about NYUD2-specific things
+  filenames_file_train: ./datasets/split_filenames_files/nyudepthv2_train_files_with_gt.txt
+  filenames_file_eval: ./datasets/split_filenames_files/nyudepthv2_test_files_with_gt.txt
+  base_path: nyu   # Base path beneath args.paths.data_dir containing nyu
+  train_path: sync  # Path beneath args.nyu.base_path containing the files found in the train filenames file
+  eval_path: official_splits/test # As above, with the test filenames file
+
+  # Norming factors: PIL images are converted to numpy arrays, then to tensors, then divided by these factors.
+  image_norm_factor: 255.0
+  depth_norm_factor: 1000.0
+
+  # Minimum and maximum depth values. Used for both training and evaluation. In metres.
+  # that it remains dataset-agnostic.
+  min_depth: 0.001
+  max_depth: 10
+
+  # Crop settings for use before computing metrics
+  eigen_crop: True        # Do Eigen crop when calculating metrics
+  garg_crop: False
+  do_kb_crop: False       # If set, crop input images as KITTI benchmark images
+  do_random_rotate: True  # If set, applies random rotation of +- args.dataset.degree to each batch
+  degree: 2.5
+
+  dimensions_train: [416, 544]  # Height, Width (in pixels)
+  dimensions_test: [480, 640]  # Height, Width (in pixels)
+
+kitti: 
+  filenames_file_train: ./datasets/split_filenames_files/kitti_eigen_train_files_with_gt.txt
+  # filenames_file_eval: ./datasets/split_filenames_files/kitti_eigen_test_files_with_gt.txt
+  filenames_file_eval: ./datasets/split_filenames_files/kitti_eigen_test_files_with_gt_shuffled.txt
+  base_path: kitti
+  data_path: raw    # datasets/kitti/raw
+  gt_path: data_depth_annotated      # datasets/kitti/data_depth_annotated
+  # Norming factors: PIL images are converted to numpy arrays, then to tensors, then divided by these factors.
+  image_norm_factor: 255.0
+  depth_norm_factor: 256.0
+
+  dimensions_train: [352, 704]  # Height, Width (in px)
+  dimensions_test: [376, 1241]
+  
+  min_depth: 0.001
+  max_depth: 80
+  garg_crop: True
+  eigen_crop: False
+  do_kb_crop: True    # Kitti benchmark crop: 352x1216.
+  do_random_rotate: True  # If set, applies random rotation of +- args.dataset.degree to each batch
+  degree: 1.0
+  use_right: False
+
+hardware:
+  num_workers: 8        # For use by the dataloaders
