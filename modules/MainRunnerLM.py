@@ -134,9 +134,6 @@ class MainRunnerLM(pl.LightningModule):
         output_named_tuple = self.model(image)
         depth_pred = output_named_tuple.depth_pred  # No clamping is used during training, but min/max clamping and nan/inf removal are used during eval/val
         
-        depth_pred = depth_pred.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
-        depth_gt = depth_gt.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
-
         depth_mask = (depth_gt > self.args[self.args.basic.dataset].min_depth) # BTS and AdaBins only use a minimum mask during training, but use both during validation/evaluation
 
         loss = self.loss(depth_pred=depth_pred, depth_gt=depth_gt, depth_mask=depth_mask, output_named_tuple=output_named_tuple)
